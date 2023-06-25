@@ -1,0 +1,79 @@
+(* Confidentiality *)
+query secret kw.
+query secret skau.
+query secret cntr.
+query secret testcreid.
+query secret tr.
+query secret pin.
+query secret newPIN.
+query secret pinUvAuthToken.
+
+(* A1 *)
+query u:UserHandle, r:RPID, a:AAGUID, c:bitstring; inj-event(ServerFinishAuth(u,r,a,c)) ==> inj-event(AuthenticatorFinishAuth(u,r,a,c)).
+
+(* A2 *)
+query tr: Transaction; inj-event(ServerFinishTr(tr)) ==> inj-event(AuthenticatorFinishTr(tr)).
+
+process
+(
+    new G: Gen;
+    new aaguid: AAGUID;
+    new userHandle: UserHandle;
+    new pin: PIN;
+    new rpid: RPID;
+    new kw: key;
+    new tr: Transaction;
+
+    new skau: sskey;
+    let pkau = spk(skau) in
+    new authcntr: CNTR;
+
+    (* Mode Dec *)
+    (* 
+    const setPIN_20: CTAPType.
+    const chgPIN_20: CTAPType.
+    const getToken_20: CTAPType.
+    const setPIN_21_puv2: CTAPType.
+    const chgPIN_21_puv2: CTAPType.
+    const getToken_21_puv2: CTAPType.
+    const sPACA: CTAPType.
+
+    const client:AuType.
+    const server:AuType.
+
+    const empty: TrType.
+    const simple: TrType.
+    const generic: TrType.
+    *)
+
+    let au_type = server in
+    let tr_type = generic in
+    let ctap_type = chgPIN_20 in
+
+    if au_type = client then
+    (
+        new creid: bitstring;
+        let testcreid = creid in
+
+        insert ServerRegRecord(userHandle, aaguid, creid, pkau, authcntr);
+        insert Authnr_Client_Record(creid, skau, rpid, userHandle, authcntr);
+
+        out(c, (G, aaguid, userHandle, rpid, pkau));
+        !Authenticator(G, aaguid, kw, pin, au_type, tr_type, ctap_type) | 
+        !Client(G, userHandle, pin, tr_type, ctap_type) | 
+        !Server(rpid, userHandle, tr, tr_type)
+    )
+    else if au_type = server then
+    (
+        let creid = senc(kw, (skau, rpid, userHandle)) in
+        let testcreid = creid in
+
+        insert ServerRegRecord(userHandle, aaguid, creid, pkau, authcntr);
+        insert Authnr_Server_Record(userHandle, rpid, authcntr);
+
+        out(c, (G, aaguid, userHandle, rpid, pkau));
+        !Authenticator(G, aaguid, kw, pin, au_type, tr_type, ctap_type) | 
+        !Client(G, userHandle, pin, tr_type, ctap_type) | 
+        !Server(rpid, userHandle, tr, tr_type)
+    )
+)

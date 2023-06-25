@@ -1,0 +1,61 @@
+(* Confidentiality *)
+query secret kw.
+query secret skat.
+query secret skau.
+query secret cntr.
+query secret testcreid.
+query secret pin.
+query secret newPIN.
+query secret pinUvAuthToken.
+
+(* A5 *)
+query u:UserHandle, r:RPID, a:AAGUID, c:bitstring, pkau:spkey; inj-event(ServerFinishReg(u,r,a,c,pkau)) ==> inj-event(ClientInitReg(u,r)).
+(* A6 *)
+query u: UserHandle, r: RPID, a: AAGUID, c: bitstring, pkau: spkey; inj-event(ServerFinishReg(u,r,a,c,pkau)) ==> inj-event(AuthenticatorFinishReg(u,r,a,c,pkau)).
+
+process
+(
+    new G: Gen;
+    new aaguid: AAGUID;
+    new userHandle: UserHandle;
+    new pWord: password;
+    new pin: bitstring;
+    new rpid: RPID;
+    new kw: key;
+    new skat: sskey;
+    let pkat = spk(skat) in
+
+    new CAInfo: bitstring;
+    new authenticatorInfo: bitstring;
+    new skCA: sskey;
+    let pkCA = spk(skCA) in
+    let sigForskat = sign(skCA, (CAInfo, authenticatorInfo, pkat)) in
+    let authenticatorCertificate = makeCert(CAInfo, authenticatorInfo, pkat, sigForskat) in
+
+    (* Mode Dec *)
+    (* 
+    const setPIN_20: CTAPType.
+    const chgPIN_20: CTAPType.
+    const getToken_20: CTAPType.
+    const setPIN_21_puv2: CTAPType.
+    const chgPIN_21_puv2: CTAPType.
+    const getToken_21_puv2: CTAPType.
+    const sPACA: CTAPType.
+
+    const client:AuType.
+    const server:AuType.
+
+    const basic: ATType.
+    const none: ATType.
+    *)
+
+    let at_type = basic in
+    let au_type = client in
+    let ctap_type = sPACA in
+
+    out(c, (CAInfo, authenticatorInfo));
+    out(c, (G, aaguid, userHandle, pkat, rpid, pkCA));
+    !Authenticator(G, aaguid, kw, skat, authenticatorCertificate, pin, at_type, au_type, ctap_type) | 
+    !Client(G, userHandle, pWord, pin, at_type, ctap_type) | 
+    !Server(rpid, userHandle, pWord, pkCA, at_type)
+)

@@ -1,0 +1,94 @@
+(* A1 *)
+query u:UserHandle, r:RPID, a:AAGUID, c:bitstring; inj-event(ServerFinishAuth(u,r,a,c)) ==> inj-event(AuthenticatorFinishAuth(u,r,a,c)).
+
+process
+(
+    new G: Gen;
+
+    (* A3 *)
+    (* user A が RP と RP' に FA で登録しているとき、RP' が A の情報を漏らしたとしても RP は injective な認証性を持っている。 *)
+
+    (* Authenticator は共通 *)
+    new aaguid: AAGUID;
+    new pin: PIN;
+    new kw: key;
+
+    (* RP0 への登録情報 *)
+    new uHandle_A0: UserHandle;
+    new skau_A0: sskey;
+    let pkau_A0 = spk(skau_A0) in
+    new cntr_A0: CNTR;
+
+    (* RP1 への登録情報 *)
+
+    (* ServerA0 の情報 *)
+    new rpid_A0: RPID;
+    new tr_A0: Transaction;
+
+    (* ServerA1 の情報 *)
+    new rpid_A1: RPID;
+    new uHandle_A1: UserHandle;
+    new skau_A1: sskey;
+    let pkau_A1 = spk(skau_A0) in
+    new cntr_A1: CNTR;
+
+    (* Mode Dec *)
+    (* 
+    const setPIN_20: CTAPType.
+    const chgPIN_20: CTAPType.
+    const getToken_20: CTAPType.
+    const setPIN_21_puv2: CTAPType.
+    const chgPIN_21_puv2: CTAPType.
+    const getToken_21_puv2: CTAPType.
+    const sPACA: CTAPType.
+
+    const client:AuType.
+    const server:AuType.
+
+    const empty: TrType.
+    const simple: TrType.
+    const generic: TrType.
+    *)
+
+    let au_type = server in
+    let tr_type = generic in
+    let ctap_type = sPACA in
+
+    if au_type = client then
+    (
+        new creid_A0: bitstring;
+        new creid_A1: bitstring;
+
+        insert ServerRegRecord(uHandle_A0, aaguid, creid_A0, pkau_A0, cntr_A0);
+        insert Authnr_Client_Record(creid_A0, skau_A0, rpid_A0, uHandle_A0, cntr_A0);
+
+        insert ServerRegRecord(uHandle_A1, aaguid, creid_A1, pkau_A1, cntr_A1);
+        insert Authnr_Client_Record(creid_A1, skau_A1, rpid_A1, uHandle_A1, cntr_A1);
+
+        (* serverA1 の情報を攻撃者に渡す *)
+        out(c, (uHandle_A1, aaguid, creid_A1, pkau_A1, cntr_A1));
+
+        out(c, (G, uHandle_A0, rpid_A0, rpid_A1, pkau_A0, pkau_A1));
+        !Authenticator(G, aaguid, kw, pin, au_type, tr_type, ctap_type) | 
+        !Client(G, uHandle_A0, pin, tr_type, ctap_type) | 
+        !Server(rpid_A0, uHandle_A0, tr_A0, tr_type)
+    ) else if au_type = server then
+    (
+        let creid_A0 = senc(kw, (skau_A0, rpid_A0, uHandle_A0)) in
+        let creid_A1 = senc(kw, (skau_A1, rpid_A1, uHandle_A1)) in
+
+        insert ServerRegRecord(uHandle_A0, aaguid, creid_A0, pkau_A0, cntr_A0);
+        insert Authnr_Server_Record(uHandle_A0, rpid_A0, cntr_A0);
+
+        insert ServerRegRecord(uHandle_A1, aaguid, creid_A1, pkau_A1, cntr_A1);
+        insert Authnr_Server_Record(uHandle_A1, rpid_A1, cntr_A1);
+
+        (* serverA1 の情報を攻撃者に渡す *)
+        out(c, (uHandle_A1, aaguid, creid_A1, pkau_A1, cntr_A1));
+
+        out(c, (G, uHandle_A0, rpid_A0, rpid_A1, pkau_A0, pkau_A1));
+        !Authenticator(G, aaguid, kw, pin, au_type, tr_type, ctap_type) | 
+        !Client(G, uHandle_A0, pin, tr_type, ctap_type) | 
+        !Server(rpid_A0, uHandle_A0, tr_A0, tr_type)
+    )
+)

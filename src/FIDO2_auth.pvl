@@ -1,0 +1,824 @@
+(* Type Declaration *)
+type RPID.
+type AAGUID.
+type UserHandle.
+type password.
+type PIN.
+type CNTR.
+type Certificate.
+type Transaction.
+
+type CTAPType.
+type AuType.
+type TrType.
+
+(* Channel Declaration *)
+free CR: channel [private]. (* Secure channel between Client and Server *)
+free CA: channel.
+free c: channel.
+
+(* Get TLS Binding *)
+fun GetTLSBinding(channel): bitstring.
+
+(* Symmetric Encryption and Decryption *)
+type key.
+
+fun senc(key, bitstring): bitstring.
+fun sdec(key, bitstring): bitstring
+reduc forall m: bitstring, k: key; sdec(k, senc(k, m)) = m.
+
+(* ECC Public Key Functions for Key Agreement *)
+type pkey.
+type skey.
+type Gen.
+
+fun pk(skey,Gen):pkey.
+fun associate(skey,pkey):bitstring.
+equation forall a:skey, b:skey, G:Gen; associate(a,pk(b,G)) = associate(b,pk(a,G)).
+
+(* Signature *)
+type spkey.
+type sskey.
+const OK: bitstring.
+
+fun spk(sskey): spkey.
+fun sign(sskey, bitstring): bitstring.
+fun checkSign(spkey, bitstring, bitstring): bitstring
+reduc forall m: bitstring, sk: sskey; checkSign(spk(sk), sign(sk, m), m) = OK.
+
+(* Hash function *)
+fun H(bitstring): bitstring.
+fun H_p(PIN): bitstring.
+fun H_r(RPID): bitstring.
+fun H_s(bitstring): key.
+fun H_t(Transaction): bitstring.
+
+(* HMAC *)
+fun HMAC(bitstring, bitstring): bitstring.
+fun HMAC1(key, bitstring): bitstring.
+
+(* PAKE *)
+fun PAKE(bitstring): bitstring.
+
+(* Counter *)
+fun Incr(CNTR): CNTR.
+fun Decr(CNTR): CNTR
+reduc forall cntr:CNTR; Decr(Incr(cntr)) = cntr.
+
+(* Data functions *)
+fun makeCert(bitstring, bitstring, spkey, bitstring): Certificate [data].
+fun ClientData(bitstring, RPID, bitstring): bitstring [data].
+
+(* Table Declaration *)
+
+(* UserHandle: UserHandle,        *)
+(* AAGUID: AAGUID,                *)
+(* bitstring: credential id,      *)
+(* pkey: attestation public key,  *)
+(* CNTR: counter                   *)
+table ServerRegRecord(UserHandle, AAGUID, bitstring, spkey, CNTR).
+table Authnr_Client_Record(bitstring, sskey, RPID, UserHandle, CNTR).    (* CreID, skCre, RpID, Uhandle, CNTRA *)
+table Authnr_Server_Record(UserHandle ,RPID, CNTR).
+
+(* Mode Dec *)
+const setPIN_20: CTAPType.
+const chgPIN_20: CTAPType.
+const getToken_20: CTAPType.
+const setPIN_21_puv1: CTAPType.
+const chgPIN_21_puv1: CTAPType.
+const getToken_21_puv1: CTAPType.
+const setPIN_21_puv2: CTAPType.
+const chgPIN_21_puv2: CTAPType.
+const getToken_21_puv2: CTAPType.
+const sPACA: CTAPType.
+
+const client:AuType.
+const server:AuType.
+
+const empty: TrType.
+const simple: TrType.
+const generic: TrType.
+
+(* Command message *)
+const GetKeyAgreement: bitstring.
+const CTAP_HMAC_key: bitstring.
+const CTAP_AES_key: bitstring.
+
+(* Event Declaration *)
+event ServerFinishAuth(UserHandle, RPID, AAGUID, bitstring).
+event ClientInitAuth(UserHandle, RPID).
+event AuthenticatorFinishAuth(UserHandle, RPID, AAGUID, bitstring).
+event ServerFinishTr(Transaction).
+event AuthenticatorFinishTr(Transaction).
+event testR().
+event testC().
+event testA().
+
+let WAClient(G: Gen, uHandle: UserHandle, pinUvAuthToken: bitstring, tr_type: TrType) =
+(
+    if tr_type = empty then
+    (
+        (* Client send challenge hash to Authenticator *)
+        in(CR, (rpid': RPID, challenge': bitstring, creid': bitstring));
+        event ClientInitAuth(uHandle, rpid');
+        let tbinding = GetTLSBinding(CR) in
+        let clientData = ClientData(challenge', rpid', tbinding) in
+        let cHash = H(clientData) in
+
+        (* Client send challenge to Authenticator *)
+        let PinAuth = HMAC(pinUvAuthToken, cHash) in
+        out(CA, (creid', rpid', cHash, PinAuth));
+
+        in(CA, (rHash': bitstring, cntr': CNTR, aaguid': AAGUID, xcreid': bitstring, pkau': spkey, sig': bitstring, xuHandle': UserHandle));
+        out(CR, (rHash', cntr', aaguid', xcreid', pkau', sig', xuHandle', clientData))
+    )
+    else if tr_type = simple then
+    (
+        (* Client send challenge hash to Authenticator *)
+        in(CR, (rpid': RPID, challenge': bitstring, creid': bitstring, tr': Transaction));
+        event ClientInitAuth(uHandle, rpid');
+        let tbinding = GetTLSBinding(CR) in
+        let clientData = ClientData(challenge', rpid', tbinding) in
+        let cHash = H(clientData) in
+
+        (* Client send challenge to Authenticator *)
+        let PinAuth = HMAC(pinUvAuthToken, cHash) in
+        out(CA, (creid', rpid', cHash, PinAuth, tr'));
+
+        in(CA, (rHash': bitstring, cntr': CNTR, aaguid': AAGUID, xcreid': bitstring, pkau': spkey, sig': bitstring, xuHandle': UserHandle, xtr: Transaction));
+        out(CR, (rHash', cntr', aaguid', xcreid', pkau', sig', xuHandle', xtr, clientData))
+    )
+    else if tr_type = generic then
+    (
+        (* Client send challenge hash to Authenticator *)
+        in(CR, (rpid': RPID, challenge': bitstring, creid': bitstring, tr': Transaction));
+        event ClientInitAuth(uHandle, rpid');
+        let tbinding = GetTLSBinding(CR) in
+        let clientData = ClientData(challenge', rpid', tbinding) in
+        let cHash = H(clientData) in
+
+        (* Client send challenge to Authenticator *)
+        let PinAuth = HMAC(pinUvAuthToken, cHash) in
+        out(CA, (creid', rpid', cHash, PinAuth, tr'));
+
+        in(CA, (rHash': bitstring, cntr': CNTR, aaguid': AAGUID, xcreid': bitstring, pkau': spkey, sig': bitstring, xuHandle': UserHandle, hTr: bitstring));
+        out(CR, (rHash', cntr', aaguid', xcreid', pkau', sig', xuHandle', hTr, clientData))
+    )
+).
+
+let WAAuthenticator(G: Gen, aaguid: AAGUID, kw: key, pinUvAuthToken: bitstring, au_type: AuType, tr_type: TrType) =
+(
+    if au_type = client && tr_type = empty then
+    (
+        (* Authenticator make credential *)
+        in(CA, (creid': bitstring, rpid': RPID, cHash': bitstring, PinAuth': bitstring));
+        let PinAuth = HMAC(pinUvAuthToken, cHash') in
+        if PinAuth' = PinAuth then
+        (
+            get Authnr_Client_Record(=creid', skau, rpid, uHandle, cntr) in
+            let rHash = H_r(rpid) in
+            let icntr = Incr(cntr) in
+            let testcntr = icntr in
+            let pkau = spk(skau) in
+            let sig = sign(skau, (rHash, icntr, aaguid, creid', pkau, cHash')) in
+            event AuthenticatorFinishAuth(uHandle, rpid, aaguid, creid');
+            out(CA, (rHash, icntr, aaguid, creid', pkau, sig, uHandle))
+        )
+    )
+    else if au_type = client && tr_type = simple then
+    (
+        (* Authenticator make credential *)
+        in(CA, (creid': bitstring, rpid': RPID, cHash': bitstring, PinAuth': bitstring, tr': Transaction));
+        let PinAuth = HMAC(pinUvAuthToken, cHash') in
+        if PinAuth' = PinAuth then
+        (
+            get Authnr_Client_Record(=creid', skau, rpid, uHandle, cntr) in
+            let rHash = H_r(rpid) in
+            let icntr = Incr(cntr) in
+            let testcntr = icntr in
+            let pkau = spk(skau) in
+            let sig = sign(skau, (rHash, icntr, aaguid, creid', pkau, cHash', tr')) in
+            event AuthenticatorFinishAuth(uHandle, rpid, aaguid, creid');
+            event AuthenticatorFinishTr(tr');
+            out(CA, (rHash, icntr, aaguid, creid', pkau, sig, uHandle, tr'))
+        )
+    )
+    else if au_type = client && tr_type = generic then
+    (
+        (* Authenticator make credential *)
+        in(CA, (creid': bitstring, rpid': RPID, cHash': bitstring, PinAuth': bitstring, tr': Transaction));
+        let PinAuth = HMAC(pinUvAuthToken, cHash') in
+        if PinAuth' = PinAuth then
+        (
+            get Authnr_Client_Record(=creid', skau, rpid, uHandle, cntr) in
+            let rHash = H_r(rpid) in
+            let icntr = Incr(cntr) in
+            let testcntr = icntr in
+            let hTr = H_t(tr') in
+            let pkau = spk(skau) in
+            let sig = sign(skau, (rHash, icntr, aaguid, creid', pkau, cHash', hTr)) in
+            event AuthenticatorFinishAuth(uHandle, rpid, aaguid, creid');
+            event AuthenticatorFinishTr(tr');
+            out(CA, (rHash, icntr, aaguid, creid', pkau, sig, uHandle, hTr))
+        )
+    )
+    else if au_type = server && tr_type = empty then
+    (
+        (* Authenticator make credential *)
+        in(CA, (creid': bitstring, rpid': RPID, cHash': bitstring, PinAuth': bitstring));
+        let PinAuth = HMAC(pinUvAuthToken, cHash') in
+        if PinAuth' = PinAuth then
+        (
+            let (skau: sskey, xrpid: RPID, uHandle: UserHandle) = sdec(kw, creid') in
+            get Authnr_Server_Record(=uHandle ,=rpid', cntr) in
+            let rHash = H_r(rpid') in
+            let icntr = Incr(cntr) in
+            let testcntr = icntr in
+            let pkau = spk(skau) in
+            let sig = sign(skau, (rHash, icntr, aaguid, creid', pkau, cHash')) in
+            event AuthenticatorFinishAuth(uHandle, rpid', aaguid, creid');
+            out(CA, (rHash, icntr, aaguid, creid', pkau, sig, uHandle))
+        )
+    )
+    else if au_type = server && tr_type = simple then
+    (
+        (* Authenticator make credential *)
+        in(CA, (creid': bitstring, rpid': RPID, cHash': bitstring, PinAuth': bitstring, tr': Transaction));
+        let PinAuth = HMAC(pinUvAuthToken, cHash') in
+        if PinAuth' = PinAuth then
+        (
+            let (skau: sskey, xrpid: RPID, uHandle: UserHandle) = sdec(kw, creid') in
+            get Authnr_Server_Record(=uHandle ,=rpid', cntr) in
+            let rHash = H_r(rpid') in
+            let icntr = Incr(cntr) in
+            let testcntr = icntr in
+            let pkau = spk(skau) in
+            let sig = sign(skau, (rHash, icntr, aaguid, creid', pkau, cHash', tr')) in
+            event AuthenticatorFinishAuth(uHandle, rpid', aaguid, creid');
+            event AuthenticatorFinishTr(tr');
+            out(CA, (rHash, icntr, aaguid, creid', pkau, sig, uHandle, tr'))
+        )
+    )
+    else if au_type = server && tr_type = generic then
+    (
+        (* Authenticator make credential *)
+        in(CA, (creid': bitstring, rpid': RPID, cHash': bitstring, PinAuth': bitstring, tr': Transaction));
+        let PinAuth = HMAC(pinUvAuthToken, cHash') in
+        if PinAuth' = PinAuth then
+        (
+            let (skau: sskey, xrpid: RPID, uHandle: UserHandle) = sdec(kw, creid') in
+            get Authnr_Server_Record(=uHandle ,=rpid', cntr) in
+            let rHash = H_r(rpid') in
+            let icntr = Incr(cntr) in
+            let testcntr = icntr in
+            let hTr = H_t(tr') in
+            let pkau = spk(skau) in
+            let sig = sign(skau, (rHash, icntr, aaguid, creid', pkau, cHash', hTr)) in
+            event AuthenticatorFinishAuth(uHandle, rpid', aaguid, creid');
+            event AuthenticatorFinishTr(tr');
+            out(CA, (rHash, icntr, aaguid, creid', pkau, sig, uHandle, hTr))
+        )
+    )
+).
+
+let Server(rpid: RPID, uHandle: UserHandle, tr: Transaction, tr_type: TrType) =
+(
+    (* Server send challenge to client *)
+    new challenge: bitstring;
+    let tbinding = GetTLSBinding(CR) in
+    get ServerRegRecord(=uHandle, aaguid, creid, pkau, cntr) in
+
+    if tr_type = empty then
+    (
+        out(CR, (rpid, challenge, creid));
+
+        in(CR, (rHash': bitstring, cntr': CNTR, aaguid': AAGUID, creid': bitstring, pkau': spkey, sig': bitstring, uHandle': UserHandle, clientData': bitstring));
+        let clientData = ClientData(challenge, rpid, tbinding) in
+        let cHash = H(clientData) in
+        let rHash = H_r(rpid) in
+        event testR();
+        if clientData = clientData' && rHash = rHash' && Incr(cntr) = cntr' 
+        && checkSign(pkau, sig', (rHash', cntr', aaguid', creid', pkau', cHash)) = OK then
+        (
+            event ServerFinishAuth(uHandle, rpid, aaguid', creid)
+        )
+    )
+    else if tr_type = simple then
+    (
+        out(CR, (rpid, challenge, creid, tr));
+
+        in(CR, (rHash': bitstring, cntr': CNTR, aaguid': AAGUID, creid': bitstring, pkau': spkey, sig': bitstring, uHandle': UserHandle, tr': Transaction, clientData': bitstring));
+        let clientData = ClientData(challenge, rpid, tbinding) in
+        let cHash = H(clientData) in
+        let rHash = H_r(rpid) in
+        event testR();
+        if clientData = clientData' && rHash = rHash' && Incr(cntr) = cntr' && tr = tr'
+        && checkSign(pkau, sig', (rHash', cntr', aaguid', creid', pkau', cHash, tr)) = OK then
+        (
+            event ServerFinishAuth(uHandle, rpid, aaguid', creid);
+            event ServerFinishTr(tr)
+        )
+    )
+    else if tr_type = generic then
+    (
+        out(CR, (rpid, challenge, creid, tr));
+
+        in(CR, (rHash': bitstring, cntr': CNTR, aaguid': AAGUID, creid': bitstring, pkau': spkey, sig': bitstring, uHandle': UserHandle, hTr': bitstring, clientData': bitstring));
+        let clientData = ClientData(challenge, rpid, tbinding) in
+        let cHash = H(clientData) in
+        let rHash = H_r(rpid) in
+        let hTr = H_t(tr) in
+        event testR();
+        if clientData = clientData' && rHash = rHash' && Incr(cntr) = cntr' && hTr = hTr'
+        && checkSign(pkau, sig', (rHash', cntr', aaguid', creid', pkau', cHash, hTr)) = OK then
+        (
+            event ServerFinishAuth(uHandle, rpid, aaguid', creid);
+            event ServerFinishTr(tr)
+        )
+    )
+).
+
+let Client(G: Gen, uHandle: UserHandle, pin: PIN, tr_type: TrType, ctap_type: CTAPType) =
+(
+    (* CTAP Binding Process *)
+    (* Send AuthencicatorGetInfo command to Client *)
+    out(CA, GetKeyAgreement);
+
+    in(CA, (aG': pkey));
+    let PinHash = H_p(pin) in
+
+    if ctap_type = getToken_20 then
+    (
+        (* Create new DH key *)
+        new b: skey;
+        let bG = pk(b, G) in
+        (* Create temporal key *)
+        let SP = associate(b, aG') in
+        let SS = H_s(SP) in
+        let PinHashEnc = senc(SS, PinHash) in
+        (* Send PinHashEnc *)
+        out(CA, (bG, PinHashEnc));
+
+
+        in(CA, (pinUvAuthTokenEnc': bitstring));
+        let pinUvAuthToken = sdec(SS, pinUvAuthTokenEnc') in
+        (* CTAP Binding Process *)
+
+        WAClient(G, uHandle, pinUvAuthToken, tr_type)
+    )
+    else if ctap_type = getToken_21_puv1 then
+    (
+        (* Create new DH key *)
+        new b: skey;
+        let bG = pk(b, G) in
+        (* Create temporal key *)
+        let SP = associate(b, aG') in
+        let SS = H_s(SP) in
+        let PinHashEnc = senc(SS, PinHash) in
+        (* Send PinHashEnc *)
+        out(CA, (bG, PinHashEnc));
+
+        (* getpinUvAuthToken *)
+        in(CA, (pinUvAuthTokenEnc': bitstring));
+        let pinUvAuthToken = sdec(SS, pinUvAuthTokenEnc') in
+        (* CTAP Binding Process *)
+
+        WAClient(G, uHandle, pinUvAuthToken, tr_type)
+    )
+    else if ctap_type = getToken_21_puv2 then
+    (
+        (* Create new DH key *)
+        new b: skey;
+        let bG = pk(b, G) in
+        (* Create temporal key *)
+        let SP = associate(b, aG') in
+        let K_1 = H((SP, CTAP_HMAC_key)) in
+        let K_2 = H_s((SP, CTAP_AES_key)) in
+
+        let PinHashEnc = senc(K_2, PinHash) in
+        (* Send PinHashEnc *)
+        out(CA, (bG, PinHashEnc));
+
+        (* getpinUvAuthToken *)
+        in(CA, (pinUvAuthTokenEnc': bitstring));
+        let pinUvAuthToken = sdec(K_2, pinUvAuthTokenEnc') in
+        (* CTAP Binding Process *)
+
+        WAClient(G, uHandle, pinUvAuthToken, tr_type)
+    )
+    else if ctap_type = setPIN_20 then
+    (
+        new newPIN: bitstring;
+        (* Create new DH key *)
+        new b: skey;
+        let bG = pk(b, G) in
+        (* Create temporal key *)
+        let SP = associate(b, aG') in
+        let SS = H_s(SP) in
+        
+        (* CTAP setPIN *)
+        let newPINEnc = senc(SS, newPIN) in
+        let pinAuth = HMAC1(SS, newPINEnc) in
+        out(CA, (bG, newPINEnc, pinAuth));
+
+        in(CA, CTAP2_OK: bitstring);
+        if CTAP2_OK = OK then
+        (
+            new b1: skey;
+            let b1G = pk(b1, G) in
+            let SP1 = associate(b1, aG') in
+            let SS1 = H_s(SP1) in
+
+            let PinHashEnc = senc(SS1, newPIN) in
+            (* Send PinHashEnc *)
+            out(CA, (b1G, PinHashEnc));
+
+            in(CA, (pinUvAuthTokenEnc': bitstring));
+            let pinUvAuthToken = sdec(SS1, pinUvAuthTokenEnc') in
+            (* CTAP Binding Process *)
+
+            WAClient(G, uHandle, pinUvAuthToken, tr_type)
+        )
+    )
+    else if ctap_type = setPIN_21_puv2 then
+    (
+        new newPIN: bitstring;
+
+        (* Create new DH key *)
+        new b: skey;
+        let bG = pk(b, G) in
+        (* Create temporal key *)
+        let SP = associate(b, aG') in
+        let K_1 = H((SP, CTAP_HMAC_key)) in
+        let K_2 = H_s((SP, CTAP_AES_key)) in
+
+        (* CTAP setPIN *)
+        let newPINEnc = senc(K_2, newPIN) in
+        let pinAuth = HMAC(K_1, newPINEnc) in
+        out(CA, (bG, newPINEnc, pinAuth));
+
+        in(CA, CTAP2_OK: bitstring);
+        if CTAP2_OK = OK then
+        (
+            (* CTAP Binding Process *)
+            (* Send AuthencicatorGetInfo command to Client *)
+            out(CA, GetKeyAgreement);
+
+            in(CA, (a1G': pkey));
+            (* Create new DH key *)
+            new b1: skey;
+            let b1G = pk(b1, G) in
+            (* Create temporal key *)
+            let SP1 = associate(b1, a1G') in
+            let K1_1 = H((SP1, CTAP_HMAC_key)) in
+            let K1_2 = H_s((SP1, CTAP_AES_key)) in
+
+            let PinHashEnc = senc(K1_2, newPIN) in
+            (* Send PinHashEnc *)
+            out(CA, (b1G, PinHashEnc));
+
+            in(CA, (pinUvAuthTokenEnc': bitstring));
+            let pinUvAuthToken = sdec(K1_2, pinUvAuthTokenEnc') in
+            (* CTAP Binding Process *)
+
+            WAClient(G, uHandle, pinUvAuthToken, tr_type)
+        )
+    )
+    else if ctap_type = chgPIN_20 then
+    (
+        new newPIN: bitstring;
+
+        (* Create new DH key *)
+        new b: skey;
+        let bG = pk(b, G) in
+        (* Create temporal key *)
+        let SP = associate(b, aG') in
+        let SS = H_s(SP) in
+
+        (* CTAP setPIN *)
+        let pinHashEnc = senc(SS, PinHash) in
+        let newPINEnc = senc(SS, newPIN) in
+        let pinAuth = HMAC1(SS, (newPINEnc, pinHashEnc)) in
+        out(CA, (bG, pinHashEnc, newPINEnc, pinAuth));
+
+        in(CA, CTAP2_OK: bitstring);
+        if CTAP2_OK = OK then
+        (
+            (* Create new DH key *)
+            new b1: skey;
+            let b1G = pk(b1, G) in
+            (* Create temporal key *)
+            let SP1 = associate(b1, aG') in
+            let SS1 = H_s(SP1) in
+
+            let newPinHashEnc = senc(SS1, newPIN) in
+            (* Send PinHashEnc *)
+            out(CA, (b1G, newPinHashEnc));
+
+            in(CA, (pinUvAuthTokenEnc': bitstring));
+            let pinUvAuthToken = sdec(SS1, pinUvAuthTokenEnc') in
+            (* CTAP Binding Process *)
+
+            WAClient(G, uHandle, pinUvAuthToken, tr_type)
+        )
+    )
+    else if ctap_type = chgPIN_21_puv2 then
+    (
+        new newPIN: bitstring;
+
+        (* Create new DH key *)
+        new b: skey;
+        let bG = pk(b, G) in
+        (* Create temporal key *)
+        let SP = associate(b, aG') in
+        let K_1 = H((SP, CTAP_HMAC_key)) in
+        let K_2 = H_s((SP, CTAP_AES_key)) in
+
+        (* CTAP setPIN *)
+        let pinHashEnc = senc(K_2, PinHash) in
+        let newPINEnc = senc(K_2, newPIN) in
+        let pinAuth = HMAC(K_1, (newPINEnc, pinHashEnc)) in
+        out(CA, (bG, pinHashEnc, newPINEnc, pinAuth));
+
+        in(CA, CTAP2_OK: bitstring);
+        if CTAP2_OK = OK then
+        (
+            (* CTAP Binding Process *)
+            (* Send AuthencicatorGetInfo command to Client *)
+            out(CA, GetKeyAgreement);
+
+            in(CA, (a1G': pkey));
+            (* Create new DH key *)
+            new b1: skey;
+            let b1G = pk(b1, G) in
+            (* Create temporal key *)
+            let SP1 = associate(b1, a1G') in
+            let K1_1 = H((SP1, CTAP_HMAC_key)) in
+            let K1_2 = H_s((SP1, CTAP_AES_key)) in
+
+            let newPinHashEnc = senc(K1_2, newPIN) in
+            (* Send PinHashEnc *)
+            out(CA, (b1G, newPinHashEnc));
+
+            in(CA, (pinUvAuthTokenEnc': bitstring));
+            let pinUvAuthToken = sdec(K1_2, pinUvAuthTokenEnc') in
+            (* CTAP Binding Process *)
+
+            WAClient(G, uHandle, pinUvAuthToken, tr_type)
+        )
+    )
+    else if ctap_type = sPACA then
+    (
+        let pinUvAuthToken = PAKE(PinHash) in
+        WAClient(G, uHandle, pinUvAuthToken, tr_type)
+    )
+).
+
+let Authenticator(G: Gen, aaguid: AAGUID, kw: key, pin: PIN, au_type: AuType, tr_type: TrType, ctap_type: CTAPType) = 
+(
+    new pinUvAuthToken: bitstring;
+    new a: skey;
+    let aG = pk(a, G) in
+    let PinHash = H_p(pin) in
+
+    if ctap_type = getToken_20 then
+    (
+        (* CTAP Bindin Process *)
+        (* Send DH key exchange parameter *)
+        in(CA, (GetKeyAgreement': bitstring));
+        if GetKeyAgreement' = GetKeyAgreement then
+        out(CA, (aG));
+
+        (* Validate PinHash *)
+        in(CA, (bG': pkey, PinHashEnc': bitstring));
+        let SP = associate(a, bG') in
+        let SS = H_s(SP) in
+        let PinHash' = sdec(SS, PinHashEnc') in
+
+        if PinHash' = PinHash then
+        (
+            (* Send pinUvAuthToken *)
+            let pinUvAuthTokenEnc = senc(SS, pinUvAuthToken) in
+            out(CA, (pinUvAuthTokenEnc));
+            event testA();
+
+            WAAuthenticator(G, aaguid, kw, pinUvAuthToken, au_type, tr_type)
+        )
+    )
+    else if ctap_type = getToken_21_puv1 then
+    (
+        (* CTAP Bindin Process *)
+        (* Send DH key exchange parameter *)
+        in(CA, (GetKeyAgreement': bitstring));
+        if GetKeyAgreement' = GetKeyAgreement then
+        out(CA, (aG));
+
+        (* Validate PinHash *)
+        in(CA, (bG': pkey, PinHashEnc': bitstring));
+        let SP = associate(a, bG') in
+        let SS = H_s(SP) in
+        let PinHash' = sdec(SS, PinHashEnc') in
+        if PinHash' = PinHash then
+        (
+            (* Send pinUvAuthToken *)
+            let pinUvAuthTokenEnc = senc(SS, pinUvAuthToken) in
+            out(CA, (pinUvAuthTokenEnc));
+            event testA();
+
+            WAAuthenticator(G, aaguid, kw, pinUvAuthToken, au_type, tr_type)
+        )
+    )
+    else if ctap_type = getToken_21_puv2 then
+    (
+        (* CTAP Bindin Process *)
+        (* Send DH key exchange parameter *)
+        in(CA, (GetKeyAgreement': bitstring));
+        if GetKeyAgreement' = GetKeyAgreement then
+        out(CA, (aG));
+
+        (* Validate PinHash *)
+        in(CA, (bG': pkey, PinHashEnc': bitstring));
+        let SP = associate(a, bG') in
+        let K_1 = H((SP, CTAP_HMAC_key)) in
+        let K_2 = H_s((SP, CTAP_AES_key)) in
+        let PinHash' = sdec(K_2, PinHashEnc') in
+        if PinHash' = PinHash then
+        (
+            (* Send pinUvAuthToken *)
+            let pinUvAuthTokenEnc = senc(K_2, pinUvAuthToken) in
+            out(CA, (pinUvAuthTokenEnc));
+            event testA();
+
+            WAAuthenticator(G, aaguid, kw, pinUvAuthToken, au_type, tr_type)
+        )
+    )
+    else if ctap_type = setPIN_20 then
+    (
+        (* CTAP Bindin Process *)
+        (* Send DH key exchange parameter *)
+        in(CA, (GetKeyAgreement': bitstring));
+        if GetKeyAgreement' = GetKeyAgreement then
+        out(CA, (aG));
+
+        in(CA, (bG': pkey, newPINEnc': bitstring, pinAuth': bitstring));
+        let SP = associate(a, bG') in
+        let SS = H_s(SP) in
+        
+        let pinAuth = HMAC1(SS, newPINEnc') in
+        if pinAuth = pinAuth' then
+        (
+            let newPIN = sdec(SS, newPINEnc') in
+            let newPINHash = H(newPIN) in
+            out(CA, OK);
+
+            (* Validate PinHash *)
+            in(CA, (b1G': pkey, PinHashEnc': bitstring));
+            let SP1 = associate(a, b1G') in
+            let SS1 = H_s(SP1) in
+            let PinHash' = sdec(SS1, PinHashEnc') in
+
+            if PinHash' = newPINHash then
+            (
+                (* Send pinUvAuthToken *)
+                let pinUvAuthTokenEnc = senc(SS1, pinUvAuthToken) in
+                out(CA, (pinUvAuthTokenEnc));
+
+                WAAuthenticator(G, aaguid, kw, pinUvAuthToken, au_type, tr_type)
+            )
+        )
+    )
+    else if ctap_type = setPIN_21_puv2 then
+    (
+        (* CTAP Bindin Process *)
+        (* Send DH key exchange parameter *)
+        in(CA, (GetKeyAgreement': bitstring));
+        if GetKeyAgreement' = GetKeyAgreement then
+        out(CA, (aG));
+
+        in(CA, (bG': pkey, newPINEnc': bitstring, pinAuth': bitstring));
+        let SP = associate(a, bG') in
+        let K_1 = H((SP, CTAP_HMAC_key)) in
+        let K_2 = H_s((SP, CTAP_AES_key)) in
+        
+        let pinAuth = HMAC(K_1, newPINEnc') in
+        if pinAuth = pinAuth' then
+        (
+            let newPIN = sdec(K_2, newPINEnc') in
+            let newPINHash = H(newPIN) in
+            out(CA, OK);
+
+            in(CA, (GetKeyAgreement2': bitstring));
+            if GetKeyAgreement2' = GetKeyAgreement then
+            new a1: skey;
+            let a1G = pk(a1, G) in
+            out(CA, (a1G));
+
+            (* Validate PinHash *)
+            in(CA, (b1G': pkey, PinHashEnc': bitstring));
+            let SP1 = associate(a1, b1G') in
+            let K1_1 = H((SP1, CTAP_HMAC_key)) in
+            let K1_2 = H_s((SP1, CTAP_AES_key)) in
+
+            let PinHash' = sdec(K1_2, PinHashEnc') in
+            if PinHash' = newPINHash then
+            (
+                (* Send pinUvAuthToken *)
+                let pinUvAuthTokenEnc = senc(K1_2, pinUvAuthToken) in
+                out(CA, (pinUvAuthTokenEnc));
+
+                WAAuthenticator(G, aaguid, kw, pinUvAuthToken, au_type, tr_type)
+            )
+        )
+    )
+    else if ctap_type = chgPIN_20 then
+    (
+        (* CTAP Bindin Process *)
+        (* Send DH key exchange parameter *)
+        in(CA, (GetKeyAgreement': bitstring));
+        if GetKeyAgreement' = GetKeyAgreement then
+        out(CA, (aG));
+
+        in(CA, (bG': pkey, pinHashEnc': bitstring, newPINEnc': bitstring, pinAuth': bitstring));
+        let SP = associate(a, bG') in
+        let SS = H_s(SP) in
+        
+        let pinAuth = HMAC1(SS, (pinHashEnc', newPINEnc')) in
+        if pinAuth = pinAuth' then
+        (
+            let pinHash' = sdec(SS, pinHashEnc') in
+            if pinHash' = PinHash then
+            (
+                let newPIN = sdec(SS, newPINEnc') in
+                let newPINHash = H(newPIN) in
+                out(CA, OK);
+
+                (* Validate PinHash *)
+                in(CA, (b1G': pkey, newPinHashEnc': bitstring));
+                let SP1 = associate(a, b1G') in
+                let SS1 = H_s(SP1) in
+
+                let newPinHash' = sdec(SS1, newPinHashEnc') in
+                if newPinHash' = newPINHash then
+                (
+                    (* Send pinUvAuthToken *)
+                    let pinUvAuthTokenEnc = senc(SS1, pinUvAuthToken) in
+                    out(CA, (pinUvAuthTokenEnc));
+
+                    WAAuthenticator(G, aaguid, kw, pinUvAuthToken, au_type, tr_type)
+                )
+            )
+        )
+    )
+    else if ctap_type = chgPIN_21_puv2 then
+    (
+        (* CTAP Bindin Process *)
+        (* Send DH key exchange parameter *)
+        in(CA, (GetKeyAgreement': bitstring));
+        if GetKeyAgreement' = GetKeyAgreement then
+        out(CA, (aG));
+
+        in(CA, (bG': pkey, pinHashEnc': bitstring, newPINEnc': bitstring, pinAuth': bitstring));
+        let SP = associate(a, bG') in
+        let K_1 = H((SP, CTAP_HMAC_key)) in
+        let K_2 = H_s((SP, CTAP_AES_key)) in
+        
+        let pinAuth = HMAC(K_1, (pinHashEnc', newPINEnc')) in
+        if pinAuth = pinAuth' then
+        (
+            let pinHash' = sdec(K_2, pinHashEnc') in
+            if pinHash' = PinHash then
+            (
+                let newPIN = sdec(K_2, newPINEnc') in
+                let newPINHash = H(newPIN) in
+                out(CA, OK);
+
+                in(CA, (GetKeyAgreement2': bitstring));
+                if GetKeyAgreement2' = GetKeyAgreement then
+                new a1: skey;
+                let a1G = pk(a1, G) in
+                out(CA, (a1G));
+
+                (* Validate PinHash *)
+                in(CA, (b1G': pkey, newPinHashEnc': bitstring));
+                let SP1 = associate(a1, b1G') in
+                let K1_1 = H((SP1, CTAP_HMAC_key)) in
+                let K1_2 = H_s((SP1, CTAP_AES_key)) in
+
+                let newPinHash' = sdec(K1_2, newPinHashEnc') in
+                if newPinHash' = newPINHash then
+                (
+                    (* Send pinUvAuthToken *)
+                    let pinUvAuthTokenEnc = senc(K1_2, pinUvAuthToken) in
+                    out(CA, (pinUvAuthTokenEnc));
+
+                    WAAuthenticator(G, aaguid, kw, pinUvAuthToken, au_type, tr_type)
+                )
+            )
+        )
+    )
+    else if ctap_type = sPACA then
+    (
+        let pinUvAuthToken = PAKE(PinHash) in
+        WAAuthenticator(G, aaguid, kw, pinUvAuthToken, au_type, tr_type)
+    )
+).
