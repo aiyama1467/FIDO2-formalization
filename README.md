@@ -21,7 +21,7 @@
 # 実行方法
 ### 実行例
 ```
-$ proverif -lib register.pvl register.pv
+$ proverif -lib src/register.pvl src/register.pv
 ```
 `-lib`でプロトコルファイル(`.pvl`)を指定。実行対象は検証用ファイル(`.pv`)を用いる。
 検証用ファイル内の`at_type`, `au_type`, `ctap_type`, `tr_type`を変更することで様々なモードを検証できる。
